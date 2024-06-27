@@ -2,6 +2,7 @@ import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { ErrorMiddleware } from "./middlewares/error";
+import userRouter from "./routes/user.route";
 
 export const app = express();
 
@@ -14,6 +15,9 @@ app.use(
     origin: process.env.ORIGIN,
   })
 );
+
+// Routes
+app.use("/api/v1", userRouter);
 
 // Unknown route
 app.all("*", (req: Request, res: Response, next: NextFunction) => {

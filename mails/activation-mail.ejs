@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LMS Activation Email</title>
+  </head>
+  <body>
+    <div class="email-wrapper">
+      <div class="email-header">Welcome to LMS</div>
+      <div class="email-body">
+        <p>Hello <%= user.name %></p>
+        <p>Your activation code is:</p>
+        <h3><%= activationCode %></h3>
+      </div>
+    </div>
+  </body>
+</html>
