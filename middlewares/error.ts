@@ -19,12 +19,12 @@ export const ErrorMiddleware = (err: any, req: Request, res: Response, next: Nex
 
   //Wrong jwt error
   if (err.name === "JsonWebTokenError") {
-    const message = `JsonWebToken is invalid. Try again`;
+    const message = `Json web token is invalid. Try again`;
     err = new ErrorHandler(message, 400);
   }
 
   if (err.name === "TokenExpiredError") {
-    const message = `JsonWebToken is expired. Try again`;
+    const message = `Json web token is expired. Try again`;
     err = new ErrorHandler(message, 400);
   }
 
