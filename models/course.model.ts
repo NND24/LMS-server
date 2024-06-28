@@ -1,9 +1,10 @@
 import mongoose, { Document, Model, Schema } from "mongoose";
+import { User } from "./user.model";
 
 interface Comment extends Document {
-  user: object;
-  comment: string;
-  commentReplies: Comment[];
+  user: User;
+  question: string;
+  questionReplies: Comment[];
 }
 
 interface Review extends Document {
@@ -27,7 +28,7 @@ interface CourseData extends Document {
   videoPlayer: string;
   links: Link[];
   suggestion: string;
-  question: Comment[];
+  questions: Comment[];
 }
 
 interface Course extends Document {
@@ -63,8 +64,8 @@ const linkSchema = new Schema<Link>({
 
 const commentSchema = new Schema<Comment>({
   user: Object,
-  comment: String,
-  commentReplies: String,
+  question: String,
+  questionReplies: String,
 });
 
 const courseDataSchema = new Schema<CourseData>({
@@ -76,7 +77,7 @@ const courseDataSchema = new Schema<CourseData>({
   videoPlayer: String,
   links: [linkSchema],
   suggestion: String,
-  question: [commentSchema],
+  questions: [commentSchema],
 });
 
 const courseSchema = new Schema<Course>({
