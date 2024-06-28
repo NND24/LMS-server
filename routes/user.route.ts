@@ -7,6 +7,7 @@ import {
   registrationUser,
   socialAuth,
   updateAccessToken,
+  updateAvatar,
   updatePassword,
   updateUserInfo,
 } from "../controllers/user.controller";
