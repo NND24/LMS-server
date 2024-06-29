@@ -2,13 +2,14 @@ import { Request, Response, NextFunction } from "express";
 import { CatchAsyncError } from "../middlewares/catchAsyncError";
 import ErrorHandler from "../utils/ErrorHandler";
 import cloudinary from "cloudinary";
-import { createCourse } from "../services/course.service";
+import { createCourse, getAllCoursesService } from "../services/course.service";
 import courseModel from "../models/course.model";
 import { redis } from "../utils/redis";
 import mongoose from "mongoose";
 import ejs from "ejs";
 import path from "path";
 import sendEmail from "../utils/sendEmail";
+import notificationModel from "../models/notification.model";
 
 export const uploadCourse = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -88,7 +89,7 @@ export const getSingleCourse = CatchAsyncError(async (req: Request, res: Respons
         .findById(req.params.id)
         .select("-courseData.videoUrl -courseData.suggestion -courseData.question -courseData.links");
 
-      await redis.set(courseId, JSON.stringify(course));
+      await redis.set(courseId, JSON.stringify(course), "EX", 604800);
 
       res.status(200).json({
         success: true,
@@ -180,6 +181,12 @@ export const addQuestion = CatchAsyncError(async (req: Request, res: Response, n
 
     courseContent.questions.push(newQuestion);
 
+    await notificationModel.create({
+      user: req.user._id,
+      title: "New question received",
+      message: `You have a new question in ${courseContent?.title}`,
+    });
+
     await course.save();
 
     res.status(200).json({
@@ -229,6 +236,11 @@ export const addAnswer = CatchAsyncError(async (req: Request, res: Response, nex
     await course.save();
 
     if (req.user?._id === question.user._id) {
+      await notificationModel.create({
+        user: req.user._id,
+        title: "New question reply received",
+        message: `You have a new question reply in ${courseContent?.title}`,
+      });
     } else {
       const data = {
         name: question.user.name,
@@ -356,5 +368,35 @@ export const addReplyReview = CatchAsyncError(async (req: Request, res: Response
     });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 400));
+  }
+});
+
+export const getAllCoursesAdmin = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    getAllCoursesService(res);
+  } catch (error: any) {
+    return next(new ErrorHandler(error.message, 500));
+  }
+});
+
+export const deleteCourse = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+
+    const course = await courseModel.findById(id);
+
+    if (!course) {
+      return next(new ErrorHandler("Course not found", 404));
+    }
+
+    await course.deleteOne({ id });
+    await redis.del(id);
+
+    res.status(200).json({
+      success: true,
+      message: "Course deleted successfully",
+    });
+  } catch (error: any) {
+    return next(new ErrorHandler(error.message, 500));
   }
 });
