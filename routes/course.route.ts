@@ -7,6 +7,7 @@ import {
   addReview,
   deleteCourse,
   editCourse,
+  generateVideoUrl,
   getAllCourses,
   getAllCoursesAdmin,
   getCourseByUser,
@@ -23,8 +24,9 @@ courseRouter.get("/get-course-content/:id", isAuthenticated, getCourseByUser);
 courseRouter.put("/add-question", isAuthenticated, addQuestion);
 courseRouter.put("/add-answer", isAuthenticated, addAnswer);
 courseRouter.put("/add-review/:id", isAuthenticated, addReview);
-courseRouter.put("/add-reply/:id", isAuthenticated, authorizeRoles("admin"), addReplyReview);
+courseRouter.put("/add-reply", isAuthenticated, authorizeRoles("admin"), addReplyReview);
 courseRouter.get("/get-courses", isAuthenticated, authorizeRoles("admin"), getAllCoursesAdmin);
-courseRouter.get("/delete-course", isAuthenticated, authorizeRoles("admin"), deleteCourse);
+courseRouter.get("/delete-course/:id", isAuthenticated, authorizeRoles("admin"), deleteCourse);
+courseRouter.post("/getVdoCipherOTP", generateVideoUrl);
 
 export default courseRouter;
