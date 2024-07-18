@@ -29,6 +29,6 @@ userRouter.put("/update-user-password", updateAccessToken, isAuthenticated, upda
 userRouter.put("/update-user-avatar", updateAccessToken, isAuthenticated, updateAvatar);
 userRouter.get("/get-users", updateAccessToken, isAuthenticated, authorizeRoles("admin"), getAllUsers);
 userRouter.put("/update-user", updateAccessToken, isAuthenticated, authorizeRoles("admin"), updateUserRole);
-userRouter.put("/delete-user/:id", updateAccessToken, isAuthenticated, authorizeRoles("admin"), deleteUser);
+userRouter.delete("/delete-user/:id", updateAccessToken, isAuthenticated, authorizeRoles("admin"), deleteUser);
 
 export default userRouter;
