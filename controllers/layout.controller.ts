@@ -14,45 +14,45 @@ export const createLayout = CatchAsyncError(async (req: Request, res: Response, 
       return next(new ErrorHandler(`${type} already exists`, 400));
     }
 
+    let newLayout;
+
     if (type === "Banner") {
       const { image, title, subTitle } = req.body;
       const myCloud = await cloudinary.v2.uploader.upload(image, {
         folder: "layout",
       });
-      const banner = {
-        image: {
-          public_id: myCloud.public_id,
-          url: myCloud.secure_url,
+      newLayout = {
+        type: "Banner",
+        banner: {
+          image: {
+            public_id: myCloud.public_id,
+            url: myCloud.secure_url,
+          },
+          title,
+          subTitle,
         },
-        title,
-        subTitle,
       };
-      await layoutModel.create(banner);
     }
 
     if (type === "FAQ") {
       const { faq } = req.body;
-      const faqItems = await Promise.all(
-        faq.map(async (item: any) => {
-          return {
-            question: item.question,
-            answer: item.answer,
-          };
-        })
-      );
-      await layoutModel.create({ type: "FAQ", faq: faqItems });
+      const faqItems = faq.map((item: any) => ({
+        question: item.question,
+        answer: item.answer,
+      }));
+      newLayout = { type: "FAQ", faq: faqItems };
     }
 
     if (type === "Categories") {
       const { categories } = req.body;
-      const categoryItems = await Promise.all(
-        categories.map(async (item: any) => {
-          return {
-            title: item.title,
-          };
-        })
-      );
-      await layoutModel.create({ type: "Categories", categories: categoryItems });
+      const categoryItems = categories.map((item: any) => ({
+        title: item.title,
+      }));
+      newLayout = { type: "Categories", categories: categoryItems };
+    }
+
+    if (newLayout) {
+      await layoutModel.create(newLayout);
     }
 
     res.status(201).json({
@@ -127,7 +127,7 @@ export const editLayout = CatchAsyncError(async (req: Request, res: Response, ne
 
 export const getLayoutByType = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { type } = req.body;
+    const { type } = req.params;
     const layout = await layoutModel.findOne({ type });
     res.status(200).json({
       success: true,

@@ -16,9 +16,9 @@ interface BannerImage extends Document {
 
 interface Layout extends Document {
   type: string;
-  faq: FaqItem[];
-  categories: Category[];
-  banner: {
+  faq?: FaqItem[];
+  categories?: Category[];
+  banner?: {
     image: BannerImage;
     title: string;
     subTitle: string;
@@ -26,27 +26,27 @@ interface Layout extends Document {
 }
 
 const faqSchema = new Schema<FaqItem>({
-  question: { type: String },
-  answer: { type: String },
+  question: { type: String, required: true },
+  answer: { type: String, required: true },
 });
 
 const categorySchema = new Schema<Category>({
-  title: { type: String },
+  title: { type: String, required: true },
 });
 
 const bannerImageSchema = new Schema<BannerImage>({
-  public_id: { type: String },
-  url: { type: String },
+  public_id: { type: String, required: true },
+  url: { type: String, required: true },
 });
 
 const layoutSchema = new Schema<Layout>({
-  type: { type: String },
-  faq: { faqSchema },
-  categories: { categorySchema },
+  type: { type: String, required: true },
+  faq: { type: [faqSchema], default: [] },
+  categories: { type: [categorySchema], default: [] },
   banner: {
     image: bannerImageSchema,
     title: { type: String },
-    sunTitle: { type: String },
+    subTitle: { type: String },
   },
 });
 
