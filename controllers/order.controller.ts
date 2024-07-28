@@ -9,10 +9,24 @@ import ejs from "ejs";
 import path from "path";
 import sendEmail from "../utils/sendEmail";
 import notificationModel from "../models/notification.model";
+import { redis } from "../utils/redis";
+require("dotenv").config();
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 export const createOrder = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { courseId, payment_info } = req.body as Order;
+    const { courseId, payment_info } = req.body as { courseId: string; payment_info: { id: string } };
+
+    if (payment_info) {
+      if ("id" in payment_info) {
+        const paymentIntentId = payment_info.id;
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+        if (paymentIntent.status !== "succeeded") {
+          return next(new ErrorHandler("Payment not authorized!", 400));
+        }
+      }
+    }
 
     const user = await userModel.findById(req.user?._id);
 
@@ -57,7 +71,9 @@ export const createOrder = CatchAsyncError(async (req: Request, res: Response, n
       return next(new ErrorHandler(error.message, 500));
     }
 
-    user?.courses.push(course?.id);
+    user?.courses.push(course._id);
+
+    await redis.set(req.user?._id, JSON.stringify(user));
 
     await user.save();
 
@@ -80,6 +96,34 @@ export const createOrder = CatchAsyncError(async (req: Request, res: Response, n
 export const getAllOrders = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
     getAllOrdersService(res);
+  } catch (error: any) {
+    return next(new ErrorHandler(error.message, 500));
+  }
+});
+
+export const sendStripePublishableKey = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
+  res.status(200).json({
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+  });
+});
+
+export const newPayment = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const myPayment = await stripe.paymentIntents.create({
+      amount: req.body.amount,
+      currency: "USD",
+      metadata: {
+        company: "E-Learning",
+      },
+      automatic_payment_methods: {
+        enabled: true,
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      client_secret: myPayment.client_secret,
+    });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 500));
   }
