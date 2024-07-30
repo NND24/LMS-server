@@ -221,6 +221,8 @@ export const addAnswer = CatchAsyncError(async (req: Request, res: Response, nex
     const newAnswer: any = {
       user: req.user,
       answer,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
     question.questionReplies.push(newAnswer);
@@ -277,7 +279,7 @@ export const addReview = CatchAsyncError(async (req: Request, res: Response, nex
 
     const courseId = req.params.id;
 
-    const courseExist = userCourseList.find((course: any) => course._id.toString() === courseId.toString());
+    const courseExist = userCourseList.some((course: any) => course._id.toString() === courseId.toString());
 
     if (!courseExist) {
       return next(new ErrorHandler("You are not eligible to access this course", 404));
@@ -306,6 +308,8 @@ export const addReview = CatchAsyncError(async (req: Request, res: Response, nex
     }
 
     await course?.save();
+
+    await redis.set(courseId, JSON.stringify(course), "EX", 604800);
 
     const noti = {
       title: "New review received",
@@ -346,6 +350,8 @@ export const addReplyReview = CatchAsyncError(async (req: Request, res: Response
     const replyData: any = {
       user: req.user,
       comment,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
     if (!review.commentReplies) {
@@ -355,6 +361,8 @@ export const addReplyReview = CatchAsyncError(async (req: Request, res: Response
     review.commentReplies.push(replyData);
 
     await course.save();
+
+    await redis.set(courseId, JSON.stringify(course), "EX", 604800);
 
     res.status(200).json({
       success: true,
