@@ -10,7 +10,7 @@ interface Comment extends Document {
 interface Review extends Document {
   user: object;
   rating: number;
-  comment: number;
+  comment: string;
   commentReplies: Comment[];
 }
 
@@ -49,26 +49,39 @@ interface Course extends Document {
   purchased?: number;
 }
 
-const reviewSchema = new Schema<Review>({
-  user: Object,
-  rating: {
-    type: Number,
-    default: 0,
+const reviewSchema = new Schema<Review>(
+  {
+    user: Object,
+    rating: {
+      type: Number,
+      default: 0,
+    },
+    comment: String,
+    commentReplies: [Object],
   },
-  comment: String,
-  commentReplies: [Object],
-});
+  { timestamps: true }
+);
 
 const linkSchema = new Schema<Link>({
   title: String,
   url: String,
 });
 
-const commentSchema = new Schema<Comment>({
-  user: Object,
-  question: String,
-  questionReplies: String,
-});
+const commentSchema = new Schema<Comment>(
+  {
+    user: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    question: {
+      type: String,
+      required: true,
+    },
+    questionReplies: [Object],
+  },
+  { timestamps: true }
+);
 
 const courseDataSchema = new Schema<CourseData>({
   videoUrl: String,
@@ -102,7 +115,6 @@ const courseSchema = new Schema<Course>(
     },
     estimatedPrice: {
       type: Number,
-      required: true,
     },
     thumbnail: {
       public_id: {

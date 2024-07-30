@@ -11,6 +11,7 @@ import path from "path";
 import sendEmail from "../utils/sendEmail";
 import notificationModel from "../models/notification.model";
 import axios from "axios";
+import userModel from "../models/user.model";
 
 export const uploadCourse = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -218,7 +219,7 @@ export const addAnswer = CatchAsyncError(async (req: Request, res: Response, nex
     }
 
     const newAnswer: any = {
-      user: req?.user,
+      user: req.user,
       answer,
     };
 
@@ -233,16 +234,18 @@ export const addAnswer = CatchAsyncError(async (req: Request, res: Response, nex
         message: `You have a new question reply in ${courseContent?.title}`,
       });
     } else {
+      const user = await userModel.findById(question.user);
+
       const data = {
-        name: question.user.name,
+        name: user.name,
         title: courseContent.title,
       };
 
-      const html = await ejs.render(path.join(__dirname, "../mails/question-reply.ejs"), data);
+      const html = await ejs.renderFile(path.join(__dirname, "../mails/question-reply.ejs"), data);
 
       try {
         await sendEmail({
-          email: question.user.email,
+          email: user.email,
           subject: "Question Reply",
           template: "question-reply.ejs",
           data,
