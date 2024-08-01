@@ -31,7 +31,7 @@ interface CourseData extends Document {
   questions: Comment[];
 }
 
-interface Course extends Document {
+export interface Course extends Document {
   name: string;
   description: string;
   categories: string;
@@ -46,7 +46,7 @@ interface Course extends Document {
   reviews: Review[];
   courseData: CourseData[];
   ratings?: number;
-  purchased?: number;
+  purchased: number;
 }
 
 const reviewSchema = new Schema<Review>(

@@ -3,7 +3,7 @@ import { CatchAsyncError } from "../middlewares/catchAsyncError";
 import ErrorHandler from "../utils/ErrorHandler";
 import { Order } from "../models/order.model";
 import userModel from "../models/user.model";
-import courseModel from "../models/course.model";
+import courseModel, { Course } from "../models/course.model";
 import { getAllOrdersService, newOrder } from "../services/order.service";
 import ejs from "ejs";
 import path from "path";
@@ -36,7 +36,7 @@ export const createOrder = CatchAsyncError(async (req: Request, res: Response, n
       return next(new ErrorHandler("You have already purchased this course", 400));
     }
 
-    const course = await courseModel.findById(courseId);
+    const course: Course = await courseModel.findById(courseId);
 
     if (!course) {
       return next(new ErrorHandler("Course not found", 404));
@@ -71,7 +71,7 @@ export const createOrder = CatchAsyncError(async (req: Request, res: Response, n
       return next(new ErrorHandler(error.message, 500));
     }
 
-    user?.courses.push(course._id);
+    user?.courses.push(course?._id);
 
     await redis.set(req.user?._id, JSON.stringify(user));
 
@@ -83,7 +83,7 @@ export const createOrder = CatchAsyncError(async (req: Request, res: Response, n
       message: `You have a new order from ${course?.name}`,
     });
 
-    course.purchased ? (course.purchased += 1) : course.purchased;
+    course.purchased = course.purchased + 1;
 
     await course.save();
 
