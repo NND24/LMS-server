@@ -1,42 +1,49 @@
 import { Request, Response, NextFunction } from "express";
 import { CatchAsyncError } from "../middlewares/catchAsyncError";
 import ErrorHandler from "../utils/ErrorHandler";
-import { Order } from "../models/order.model";
 import userModel from "../models/user.model";
 import courseModel, { Course } from "../models/course.model";
-import { getAllOrdersService, newOrder } from "../services/order.service";
 import ejs from "ejs";
 import path from "path";
 import sendEmail from "../utils/sendEmail";
 import notificationModel from "../models/notification.model";
 import { redis } from "../utils/redis";
+import orderModel from "../models/order.model";
 require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 export const createOrder = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { courseId, payment_info } = req.body as { courseId: string; payment_info: { id: string } };
+    const { courseId, payment_info } = req.body;
 
-    if (payment_info) {
-      if ("id" in payment_info) {
-        const paymentIntentId = payment_info.id;
-        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (!courseId) {
+      return next(new ErrorHandler("Course ID is required", 400));
+    }
 
-        if (paymentIntent.status !== "succeeded") {
-          return next(new ErrorHandler("Payment not authorized!", 400));
-        }
-      }
+    if (!payment_info || !payment_info.id) {
+      return next(new ErrorHandler("Payment information is required", 400));
+    }
+
+    const paymentIntentId = payment_info.id;
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status !== "succeeded") {
+      return next(new ErrorHandler("Payment not authorized!", 400));
     }
 
     const user = await userModel.findById(req.user?._id);
 
-    const courseExistInUser = user?.courses.some((course: any) => course._id.toString() === courseId);
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
+    const courseExistInUser = user.courses.some((course) => course.courseId === courseId);
 
     if (courseExistInUser) {
       return next(new ErrorHandler("You have already purchased this course", 400));
     }
 
-    const course: Course = await courseModel.findById(courseId);
+    const course = await courseModel.findById(courseId);
 
     if (!course) {
       return next(new ErrorHandler("Course not found", 404));
@@ -59,43 +66,48 @@ export const createOrder = CatchAsyncError(async (req: Request, res: Response, n
     const html = await ejs.renderFile(path.join(__dirname, "../mails/order-confirmation.ejs"), { order: mailData });
 
     try {
-      if (user) {
-        await sendEmail({
-          email: user.email,
-          subject: "Order confirmation",
-          template: "order-confirmation.ejs",
-          data: mailData,
-        });
-      }
+      await sendEmail({
+        email: user.email,
+        subject: "Order confirmation",
+        template: "order-confirmation.ejs",
+        data: mailData,
+      });
     } catch (error: any) {
-      return next(new ErrorHandler(error.message, 500));
+      return next(new ErrorHandler("Failed to send confirmation email", 500));
     }
 
-    user?.courses.push(course?._id);
-
-    await redis.set(req.user?._id, JSON.stringify(user));
-
+    user.courses.push({ courseId: course._id.toString() });
+    await redis.set(req.user?._id.toString(), JSON.stringify(user));
     await user.save();
 
     await notificationModel.create({
-      user: user?._id,
+      user: user._id,
       title: "New order",
-      message: `You have a new order from ${course?.name}`,
+      message: `You have a new order from ${course.name}`,
     });
 
-    course.purchased = course.purchased + 1;
-
+    course.purchased += 1;
     await course.save();
 
-    newOrder(data, res, next);
+    const order = await orderModel.create(data);
+
+    res.status(201).json({
+      success: true,
+      order,
+    });
   } catch (error: any) {
-    return next(new ErrorHandler(error.message, 500));
+    next(new ErrorHandler(error.message, 500));
   }
 });
 
 export const getAllOrders = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    getAllOrdersService(res);
+    const orders = await orderModel.find().sort({ createdAt: -1 });
+
+    res.status(201).json({
+      success: true,
+      orders,
+    });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 500));
   }

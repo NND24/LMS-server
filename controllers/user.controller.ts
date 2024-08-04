@@ -9,7 +9,6 @@ import path from "path";
 import sendEmail from "../utils/sendEmail";
 import { accessTokenOptions, refreshTokenOptions, sendToken } from "../utils/jwt";
 import { redis } from "../utils/redis";
-import { getAllUsersService, getUserId, updateUserRoleService } from "../services/user.service";
 import cloudinary from "cloudinary";
 
 interface RegistrationBody {
@@ -212,7 +211,15 @@ export const updateAccessToken = CatchAsyncError(async (req: Request, res: Respo
 export const getUserInfo = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?._id;
-    getUserId(userId, res);
+    const userJson = await redis.get(userId);
+
+    if (userJson) {
+      const user = JSON.parse(userJson);
+      res.status(201).json({
+        success: true,
+        user,
+      });
+    }
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 400));
   }
@@ -353,7 +360,12 @@ export const updateAvatar = CatchAsyncError(async (req: Request, res: Response, 
 
 export const getAllUsers = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    getAllUsersService(res);
+    const users = await userModel.find().sort({ createdAt: -1 });
+
+    res.status(201).json({
+      success: true,
+      users,
+    });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 500));
   }
@@ -365,7 +377,12 @@ export const updateUserRole = CatchAsyncError(async (req: Request, res: Response
     const isUserExist = await userModel.findOne({ email });
     if (isUserExist) {
       const id = isUserExist._id;
-      updateUserRoleService(id, role, res);
+      const user = await userModel.findByIdAndUpdate(id, { role }, { new: true });
+
+      res.status(201).json({
+        success: true,
+        user,
+      });
     } else {
       res.status(400).json({
         success: "false",

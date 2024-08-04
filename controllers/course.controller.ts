@@ -2,8 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { CatchAsyncError } from "../middlewares/catchAsyncError";
 import ErrorHandler from "../utils/ErrorHandler";
 import cloudinary from "cloudinary";
-import { createCourse, getAllCoursesService } from "../services/course.service";
-import courseModel from "../models/course.model";
+import courseModel, { Course } from "../models/course.model";
 import { redis } from "../utils/redis";
 import mongoose from "mongoose";
 import ejs from "ejs";
@@ -29,7 +28,11 @@ export const uploadCourse = CatchAsyncError(async (req: Request, res: Response, 
       };
     }
 
-    createCourse(data, res, next);
+    const course = await courseModel.create(data);
+    res.status(201).json({
+      success: true,
+      course,
+    });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 400));
   }
@@ -122,25 +125,35 @@ export const getAllCourses = CatchAsyncError(async (req: Request, res: Response,
 
 export const getCourseByUser = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const userCourseList = req.user?.courses;
-    const courseId = req.params.id;
+    const user = req.user;
 
-    const courseExist = userCourseList?.find((course: any) => course._id.toString() === courseId);
-
-    if (!courseExist) {
-      return next(new ErrorHandler("You are not eligible to access this course", 404));
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
     }
 
-    const course = await courseModel.findById(courseId);
+    const userCourseList = user.courses;
+    const courseId = req.params.id;
 
-    const content = course?.courseData;
+    const courseExist = userCourseList.find((course) => course.courseId.toString() === courseId);
+
+    if (!courseExist) {
+      return next(new ErrorHandler("You are not eligible to access this course", 403));
+    }
+
+    const course: Course = await courseModel.findById(courseId);
+
+    if (!course) {
+      return next(new ErrorHandler("Course not found", 404));
+    }
+
+    const content = course.courseData;
 
     res.status(200).json({
       success: true,
       content,
     });
   } catch (error: any) {
-    return next(new ErrorHandler(error.message, 400));
+    return next(new ErrorHandler(error.message, 500));
   }
 });
 
@@ -153,14 +166,17 @@ interface AddQuestionData {
 export const addQuestion = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { question, courseId, contentId } = req.body as AddQuestionData;
-    const course = await courseModel.findById(courseId);
 
     if (!mongoose.Types.ObjectId.isValid(contentId)) {
       return next(new ErrorHandler("Invalid content id", 400));
     }
 
-    const courseContent = course?.courseData?.find((item: any) => item._id.equals(contentId));
+    const course = await courseModel.findById(courseId);
+    if (!course) {
+      return next(new ErrorHandler("Course not found", 404));
+    }
 
+    const courseContent = course.courseData?.find((item: any) => item._id.equals(contentId));
     if (!courseContent) {
       return next(new ErrorHandler("Invalid content id", 400));
     }
@@ -176,7 +192,7 @@ export const addQuestion = CatchAsyncError(async (req: Request, res: Response, n
     await notificationModel.create({
       user: req.user._id,
       title: "New question received",
-      message: `You have a new question in ${courseContent?.title}`,
+      message: `You have a new question in ${courseContent.title}`,
     });
 
     await course.save();
@@ -186,7 +202,7 @@ export const addQuestion = CatchAsyncError(async (req: Request, res: Response, n
       course,
     });
   } catch (error: any) {
-    return next(new ErrorHandler(error.message, 400));
+    next(new ErrorHandler(error.message, 500));
   }
 });
 
@@ -375,7 +391,12 @@ export const addReplyReview = CatchAsyncError(async (req: Request, res: Response
 
 export const getAllCoursesAdmin = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    getAllCoursesService(res);
+    const courses = await courseModel.find().sort({ createdAt: -1 });
+
+    res.status(201).json({
+      success: true,
+      courses,
+    });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 500));
   }
