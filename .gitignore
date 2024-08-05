@@ -30,7 +30,6 @@ Desktop.ini
 
 # Build output
 dist/
-build/
 
 # IDEs and editors
 .idea/
