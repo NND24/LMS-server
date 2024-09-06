@@ -17,6 +17,7 @@ export interface User extends Document {
   role: string;
   isVerified: boolean;
   courses: Array<{ courseId: string }>;
+  refreshToken: string[];
   comparedPassword: (password: string) => Promise<boolean>;
   SignAccessToken: () => string;
   SignRefreshToken: () => string;
@@ -61,6 +62,7 @@ const userSchema: Schema<User> = new mongoose.Schema(
         courseId: String,
       },
     ],
+    refreshToken: [String],
   },
   { timestamps: true }
 );
@@ -81,7 +83,7 @@ userSchema.methods.SignAccessToken = function () {
 
 userSchema.methods.SignRefreshToken = function () {
   return jwt.sign({ id: this._id }, process.env.REFRESH_TOKEN || "", {
-    expiresIn: "3d",
+    expiresIn: "30d",
   });
 };
 

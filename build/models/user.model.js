@@ -46,6 +46,7 @@ const userSchema = new mongoose_1.default.Schema({
             courseId: String,
         },
     ],
+    refreshToken: [String],
 }, { timestamps: true });
 userSchema.pre("save", async function (next) {
     if (!this.isModified("password")) {
@@ -61,7 +62,7 @@ userSchema.methods.SignAccessToken = function () {
 };
 userSchema.methods.SignRefreshToken = function () {
     return jsonwebtoken_1.default.sign({ id: this._id }, process.env.REFRESH_TOKEN || "", {
-        expiresIn: "3d",
+        expiresIn: "30d",
     });
 };
 userSchema.methods.comparedPassword = async function (enteredPassword) {

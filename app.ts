@@ -17,7 +17,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use(cookieParser());
 app.use(
   cors({
-    origin: ["https://e-learning-red.vercel.app"],
+    origin: ["https://e-learning-red.vercel.app", "http://localhost:3000"],
     credentials: true,
   })
 );

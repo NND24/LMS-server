@@ -3,12 +3,11 @@ import { Request, Response, NextFunction } from "express";
 import userModel, { User } from "../models/user.model";
 import ErrorHandler from "../utils/ErrorHandler";
 import { CatchAsyncError } from "../middlewares/catchAsyncError";
-import jwt, { JwtPayload, Secret } from "jsonwebtoken";
+import jwt, { Secret } from "jsonwebtoken";
 import ejs from "ejs";
 import path from "path";
 import sendEmail from "../utils/sendEmail";
-import { accessTokenOptions, refreshTokenOptions, sendToken } from "../utils/jwt";
-import { redis } from "../utils/redis";
+import { sendToken } from "../utils/jwt";
 import cloudinary from "cloudinary";
 
 interface RegistrationBody {
@@ -108,7 +107,7 @@ export const activateUser = CatchAsyncError(async (req: Request, res: Response, 
       return next(new ErrorHandler("Email already exist", 400));
     }
 
-    const user = await userModel.create({
+    await userModel.create({
       name,
       email,
       password,
@@ -147,7 +146,7 @@ export const loginUser = CatchAsyncError(async (req: Request, res: Response, nex
       return next(new ErrorHandler("Invalid email or password", 400));
     }
 
-    sendToken(user, 200, res);
+    sendToken(user, 200, req, res);
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 400));
   }
@@ -155,11 +154,20 @@ export const loginUser = CatchAsyncError(async (req: Request, res: Response, nex
 
 export const logoutUser = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    res.cookie("access_token", "", { maxAge: 1 });
-    res.cookie("refresh_token", "", { maxAge: 1 });
+    const cookies = req.cookies;
+    if (!cookies?.jwt) return res.sendStatus(204);
+    const refreshToken = cookies.jwt;
 
-    const userId = req.user?._id || "";
-    redis.del(userId);
+    const foundUser = await userModel.findOne({ refreshToken }).exec();
+    if (!foundUser) {
+      res.clearCookie("jwt", { httpOnly: true, sameSite: "none", secure: true });
+      return res.sendStatus(204);
+    }
+
+    foundUser.refreshToken = foundUser.refreshToken.filter((rt) => rt !== refreshToken);
+    await foundUser.save();
+
+    res.clearCookie("jwt", { httpOnly: true, sameSite: "none", secure: true });
 
     res.status(200).json({
       success: true,
@@ -172,49 +180,60 @@ export const logoutUser = CatchAsyncError(async (req: Request, res: Response, ne
 
 export const updateAccessToken = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const refresh_token = req.cookies.refresh_token as string;
-    const decoded = jwt.verify(refresh_token, process.env.REFRESH_TOKEN as string) as JwtPayload;
-
-    if (!decoded) {
-      return next(new ErrorHandler("Could not refresh token", 400));
+    const cookies = req.cookies;
+    if (!cookies?.jwt) {
+      return next(new ErrorHandler("Unauthorized: No refresh token provided", 401));
     }
 
-    const session = await redis.get(decoded.id as string);
+    const refreshToken = cookies.jwt;
+    res.clearCookie("jwt", { httpOnly: true, sameSite: "none", secure: true });
 
-    if (!session) {
-      return next(new ErrorHandler("Please login to access this resource", 400));
+    const foundUser = await userModel.findOne({ refreshToken }).exec();
+
+    if (!foundUser) {
+      jwt.verify(refreshToken, process.env.REFRESH_TOKEN as string, async (err: any, decoded: any) => {
+        if (err) {
+          return next(new ErrorHandler("Forbidden: Invalid or expired refresh token", 403));
+        }
+
+        const user = await userModel.findOne({ name: decoded.name }).exec();
+        if (user) {
+          user.refreshToken = [];
+          await user.save();
+        }
+
+        return next(new ErrorHandler("Forbidden: Possible token misuse detected", 403));
+      });
+
+      return next(new ErrorHandler("Forbidden: Refresh token not found", 403));
     }
 
-    const user = JSON.parse(session);
+    const newRefreshTokenArray = foundUser.refreshToken.filter((rt) => rt !== refreshToken);
 
-    const accessToken = jwt.sign({ id: user._id }, process.env.ACCESS_TOKEN as string, {
-      expiresIn: "5m",
+    jwt.verify(refreshToken, process.env.REFRESH_TOKEN as string, async (err: any, decoded: any) => {
+      if (err) {
+        foundUser.refreshToken = newRefreshTokenArray;
+        await foundUser.save();
+        return next(new ErrorHandler("Forbidden: Refresh token verification failed", 403));
+      }
+
+      if (foundUser._id.toString() !== decoded.id) {
+        return next(new ErrorHandler("Forbidden: User mismatch", 403));
+      }
+
+      sendToken(foundUser, 200, req, res);
     });
-
-    const refreshToken = jwt.sign({ id: user._id }, process.env.REFRESH_TOKEN as string, {
-      expiresIn: "3d",
-    });
-
-    req.user = user;
-
-    res.cookie("access_token", accessToken, accessTokenOptions);
-    res.cookie("refresh_token", refreshToken, refreshTokenOptions);
-
-    await redis.set(user._id, JSON.stringify(user), "EX", 604800);
-
-    return next();
   } catch (error: any) {
-    return next(new ErrorHandler(error.message, 400));
+    return next(new ErrorHandler(`Internal Server Error: ${error.message}`, 500));
   }
 });
 
 export const getUserInfo = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?._id;
-    const userJson = await redis.get(userId);
+    const user = await userModel.findById(userId);
 
-    if (userJson) {
-      const user = JSON.parse(userJson);
+    if (user) {
       res.status(201).json({
         success: true,
         user,
@@ -237,9 +256,9 @@ export const socialAuth = CatchAsyncError(async (req: Request, res: Response, ne
     const user = await userModel.findOne({ email });
     if (!user) {
       const newUser = await userModel.create({ email, name, avatar });
-      sendToken(newUser, 200, res);
+      sendToken(newUser, 200, req, res);
     } else {
-      sendToken(user, 200, res);
+      sendToken(user, 200, req, res);
     }
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 400));
@@ -257,16 +276,29 @@ export const updateUserInfo = CatchAsyncError(async (req: Request, res: Response
     const userId = req.user?._id;
     const user = await userModel?.findById(userId);
 
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
     if (name && user) {
       user.name = name;
     }
 
     await user?.save();
-    await redis.set(userId, JSON.stringify(user));
+
+    const accessToken = user.SignAccessToken();
 
     res.status(201).json({
       success: true,
-      user,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatar: user.avatar,
+        courses: user.courses,
+      },
+      accessToken,
     });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 400));
@@ -301,7 +333,6 @@ export const updatePassword = CatchAsyncError(async (req: Request, res: Response
     user.password = newPassword;
 
     await user.save();
-    await redis.set(req.user?._id, JSON.stringify(user));
 
     res.status(201).json({
       success: true,
@@ -319,8 +350,12 @@ interface UpdateAvatar {
 export const updateAvatar = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { avatar } = req.body as UpdateAvatar;
-    const userId = req.user._id;
+    const userId = (req.user as User)._id;
     const user = await userModel.findById(userId);
+
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
 
     if (avatar && user) {
       if (user?.avatar?.public_id) {
@@ -347,11 +382,20 @@ export const updateAvatar = CatchAsyncError(async (req: Request, res: Response, 
     }
 
     await user.save();
-    await redis.set(userId, JSON.stringify(user));
+
+    const accessToken = user.SignAccessToken();
 
     res.status(201).json({
       success: true,
-      user,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatar: user.avatar,
+        courses: user.courses,
+      },
+      accessToken,
     });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 400));
@@ -379,9 +423,23 @@ export const updateUserRole = CatchAsyncError(async (req: Request, res: Response
       const id = isUserExist._id;
       const user = await userModel.findByIdAndUpdate(id, { role }, { new: true });
 
+      if (!user) {
+        return next(new ErrorHandler("User not found", 404));
+      }
+
+      const accessToken = user.SignAccessToken();
+
       res.status(201).json({
         success: true,
-        user,
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          avatar: user.avatar,
+          courses: user.courses,
+        },
+        accessToken,
       });
     } else {
       res.status(400).json({
@@ -405,7 +463,6 @@ export const deleteUser = CatchAsyncError(async (req: Request, res: Response, ne
     }
 
     await user.deleteOne({ id });
-    await redis.del(id);
 
     res.status(200).json({
       success: true,

@@ -1,40 +1,38 @@
 import ErrorHandler from "../utils/ErrorHandler";
 import jwt, { JwtPayload } from "jsonwebtoken";
-import { redis } from "../utils/redis";
 import { CatchAsyncError } from "./catchAsyncError";
 import { NextFunction, Request, Response } from "express";
-import { updateAccessToken } from "../controllers/user.controller";
+import userModel from "../models/user.model";
 
 export const isAuthenticated = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
-  const access_token = req.cookies.access_token as string;
+  const authHeader = req.headers.authorization || (req.headers.Authorization as string);
 
-  if (!access_token) {
-    return next(new ErrorHandler("Please login to your account", 400));
+  if (!authHeader?.startsWith("Bearer ")) {
+    return next(new ErrorHandler("Unauthorized: No token provided", 401));
   }
 
-  const decoded = jwt.decode(access_token) as JwtPayload;
+  const token = authHeader.split(" ")[1];
+  if (token) {
+    jwt.verify(token, process.env.ACCESS_TOKEN as string, async (err, decoded: any) => {
+      if (err) {
+        return next(new ErrorHandler("Forbidden: Invalid token", 403));
+      }
 
-  if (!decoded) {
-    return next(new ErrorHandler("Access token is not valid", 400));
-  }
-
-  if (decoded.exp && decoded.exp <= Date.now() / 1000) {
-    try {
-      await updateAccessToken(req, res, next);
-    } catch (error) {
-      return next(error);
-    }
+      if (decoded?.id) {
+        const user = await userModel.findById(decoded.id);
+        if (user) {
+          req.user = user;
+          next();
+        } else {
+          return next(new ErrorHandler("User not found", 404));
+        }
+      } else {
+        return next(new ErrorHandler("Invalid token payload", 403));
+      }
+    });
   } else {
-    const user = await redis.get(decoded.id);
-
-    if (!user) {
-      return next(new ErrorHandler("Please login to access this resource", 400));
-    }
-
-    req.user = JSON.parse(user);
+    return next(new ErrorHandler("Token not provided", 401));
   }
-
-  next();
 });
 
 export const authorizeRoles = (...roles: string[]) => {

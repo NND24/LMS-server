@@ -6,34 +6,37 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.authorizeRoles = exports.isAuthenticated = void 0;
 const ErrorHandler_1 = __importDefault(require("../utils/ErrorHandler"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const redis_1 = require("../utils/redis");
 const catchAsyncError_1 = require("./catchAsyncError");
-const user_controller_1 = require("../controllers/user.controller");
+const user_model_1 = __importDefault(require("../models/user.model"));
 exports.isAuthenticated = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, next) => {
-    const access_token = req.cookies.access_token;
-    if (!access_token) {
-        return next(new ErrorHandler_1.default("Please login to your account", 400));
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+        return next(new ErrorHandler_1.default("Unauthorized: No token provided", 401));
     }
-    const decoded = jsonwebtoken_1.default.decode(access_token);
-    if (!decoded) {
-        return next(new ErrorHandler_1.default("Access token is not valid", 400));
-    }
-    if (decoded.exp && decoded.exp <= Date.now() / 1000) {
-        try {
-            await (0, user_controller_1.updateAccessToken)(req, res, next);
-        }
-        catch (error) {
-            return next(error);
-        }
+    const token = authHeader.split(" ")[1];
+    if (token) {
+        jsonwebtoken_1.default.verify(token, process.env.ACCESS_TOKEN, async (err, decoded) => {
+            if (err) {
+                return next(new ErrorHandler_1.default("Forbidden: Invalid token", 403));
+            }
+            if (decoded?.id) {
+                const user = await user_model_1.default.findById(decoded.id);
+                if (user) {
+                    req.user = user;
+                    next();
+                }
+                else {
+                    return next(new ErrorHandler_1.default("User not found", 404));
+                }
+            }
+            else {
+                return next(new ErrorHandler_1.default("Invalid token payload", 403));
+            }
+        });
     }
     else {
-        const user = await redis_1.redis.get(decoded.id);
-        if (!user) {
-            return next(new ErrorHandler_1.default("Please login to access this resource", 400));
-        }
-        req.user = JSON.parse(user);
+        return next(new ErrorHandler_1.default("Token not provided", 401));
     }
-    next();
 });
 const authorizeRoles = (...roles) => {
     return (req, res, next) => {

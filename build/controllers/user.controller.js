@@ -13,7 +13,6 @@ const ejs_1 = __importDefault(require("ejs"));
 const path_1 = __importDefault(require("path"));
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
 const jwt_1 = require("../utils/jwt");
-const redis_1 = require("../utils/redis");
 const cloudinary_1 = __importDefault(require("cloudinary"));
 exports.registrationUser = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, next) => {
     try {
@@ -75,7 +74,7 @@ exports.activateUser = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, n
         if (isExistedUser) {
             return next(new ErrorHandler_1.default("Email already exist", 400));
         }
-        const user = await user_model_1.default.create({
+        await user_model_1.default.create({
             name,
             email,
             password,
@@ -102,7 +101,7 @@ exports.loginUser = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, next
         if (!isCorrectPass) {
             return next(new ErrorHandler_1.default("Invalid email or password", 400));
         }
-        (0, jwt_1.sendToken)(user, 200, res);
+        (0, jwt_1.sendToken)(user, 200, req, res);
     }
     catch (error) {
         return next(new ErrorHandler_1.default(error.message, 400));
@@ -110,10 +109,18 @@ exports.loginUser = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, next
 });
 exports.logoutUser = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, next) => {
     try {
-        res.cookie("access_token", "", { maxAge: 1 });
-        res.cookie("refresh_token", "", { maxAge: 1 });
-        const userId = req.user?._id || "";
-        redis_1.redis.del(userId);
+        const cookies = req.cookies;
+        if (!cookies?.jwt)
+            return res.sendStatus(204);
+        const refreshToken = cookies.jwt;
+        const foundUser = await user_model_1.default.findOne({ refreshToken }).exec();
+        if (!foundUser) {
+            res.clearCookie("jwt", { httpOnly: true, sameSite: "none", secure: true });
+            return res.sendStatus(204);
+        }
+        foundUser.refreshToken = foundUser.refreshToken.filter((rt) => rt !== refreshToken);
+        await foundUser.save();
+        res.clearCookie("jwt", { httpOnly: true, sameSite: "none", secure: true });
         res.status(200).json({
             success: true,
             message: "Logged out successfully!",
@@ -125,38 +132,49 @@ exports.logoutUser = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, nex
 });
 exports.updateAccessToken = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, next) => {
     try {
-        const refresh_token = req.cookies.refresh_token;
-        const decoded = jsonwebtoken_1.default.verify(refresh_token, process.env.REFRESH_TOKEN);
-        if (!decoded) {
-            return next(new ErrorHandler_1.default("Could not refresh token", 400));
+        const cookies = req.cookies;
+        if (!cookies?.jwt) {
+            return next(new ErrorHandler_1.default("Unauthorized: No refresh token provided", 401));
         }
-        const session = await redis_1.redis.get(decoded.id);
-        if (!session) {
-            return next(new ErrorHandler_1.default("Please login to access this resource", 400));
+        const refreshToken = cookies.jwt;
+        res.clearCookie("jwt", { httpOnly: true, sameSite: "none", secure: true });
+        const foundUser = await user_model_1.default.findOne({ refreshToken }).exec();
+        if (!foundUser) {
+            jsonwebtoken_1.default.verify(refreshToken, process.env.REFRESH_TOKEN, async (err, decoded) => {
+                if (err) {
+                    return next(new ErrorHandler_1.default("Forbidden: Invalid or expired refresh token", 403));
+                }
+                const user = await user_model_1.default.findOne({ name: decoded.name }).exec();
+                if (user) {
+                    user.refreshToken = [];
+                    await user.save();
+                }
+                return next(new ErrorHandler_1.default("Forbidden: Possible token misuse detected", 403));
+            });
+            return next(new ErrorHandler_1.default("Forbidden: Refresh token not found", 403));
         }
-        const user = JSON.parse(session);
-        const accessToken = jsonwebtoken_1.default.sign({ id: user._id }, process.env.ACCESS_TOKEN, {
-            expiresIn: "5m",
+        const newRefreshTokenArray = foundUser.refreshToken.filter((rt) => rt !== refreshToken);
+        jsonwebtoken_1.default.verify(refreshToken, process.env.REFRESH_TOKEN, async (err, decoded) => {
+            if (err) {
+                foundUser.refreshToken = newRefreshTokenArray;
+                await foundUser.save();
+                return next(new ErrorHandler_1.default("Forbidden: Refresh token verification failed", 403));
+            }
+            if (foundUser._id.toString() !== decoded.id) {
+                return next(new ErrorHandler_1.default("Forbidden: User mismatch", 403));
+            }
+            (0, jwt_1.sendToken)(foundUser, 200, req, res);
         });
-        const refreshToken = jsonwebtoken_1.default.sign({ id: user._id }, process.env.REFRESH_TOKEN, {
-            expiresIn: "3d",
-        });
-        req.user = user;
-        res.cookie("access_token", accessToken, jwt_1.accessTokenOptions);
-        res.cookie("refresh_token", refreshToken, jwt_1.refreshTokenOptions);
-        await redis_1.redis.set(user._id, JSON.stringify(user), "EX", 604800);
-        return next();
     }
     catch (error) {
-        return next(new ErrorHandler_1.default(error.message, 400));
+        return next(new ErrorHandler_1.default(`Internal Server Error: ${error.message}`, 500));
     }
 });
 exports.getUserInfo = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, next) => {
     try {
         const userId = req.user?._id;
-        const userJson = await redis_1.redis.get(userId);
-        if (userJson) {
-            const user = JSON.parse(userJson);
+        const user = await user_model_1.default.findById(userId);
+        if (user) {
             res.status(201).json({
                 success: true,
                 user,
@@ -173,10 +191,10 @@ exports.socialAuth = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, nex
         const user = await user_model_1.default.findOne({ email });
         if (!user) {
             const newUser = await user_model_1.default.create({ email, name, avatar });
-            (0, jwt_1.sendToken)(newUser, 200, res);
+            (0, jwt_1.sendToken)(newUser, 200, req, res);
         }
         else {
-            (0, jwt_1.sendToken)(user, 200, res);
+            (0, jwt_1.sendToken)(user, 200, req, res);
         }
     }
     catch (error) {
@@ -188,14 +206,25 @@ exports.updateUserInfo = (0, catchAsyncError_1.CatchAsyncError)(async (req, res,
         const { name } = req.body;
         const userId = req.user?._id;
         const user = await user_model_1.default?.findById(userId);
+        if (!user) {
+            return next(new ErrorHandler_1.default("User not found", 404));
+        }
         if (name && user) {
             user.name = name;
         }
         await user?.save();
-        await redis_1.redis.set(userId, JSON.stringify(user));
+        const accessToken = user.SignAccessToken();
         res.status(201).json({
             success: true,
-            user,
+            user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                avatar: user.avatar,
+                courses: user.courses,
+            },
+            accessToken,
         });
     }
     catch (error) {
@@ -218,7 +247,6 @@ exports.updatePassword = (0, catchAsyncError_1.CatchAsyncError)(async (req, res,
         }
         user.password = newPassword;
         await user.save();
-        await redis_1.redis.set(req.user?._id, JSON.stringify(user));
         res.status(201).json({
             success: true,
             user,
@@ -233,6 +261,9 @@ exports.updateAvatar = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, n
         const { avatar } = req.body;
         const userId = req.user._id;
         const user = await user_model_1.default.findById(userId);
+        if (!user) {
+            return next(new ErrorHandler_1.default("User not found", 404));
+        }
         if (avatar && user) {
             if (user?.avatar?.public_id) {
                 await cloudinary_1.default.v2.uploader.destroy(user?.avatar?.public_id);
@@ -257,10 +288,18 @@ exports.updateAvatar = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, n
             }
         }
         await user.save();
-        await redis_1.redis.set(userId, JSON.stringify(user));
+        const accessToken = user.SignAccessToken();
         res.status(201).json({
             success: true,
-            user,
+            user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                avatar: user.avatar,
+                courses: user.courses,
+            },
+            accessToken,
         });
     }
     catch (error) {
@@ -286,9 +325,21 @@ exports.updateUserRole = (0, catchAsyncError_1.CatchAsyncError)(async (req, res,
         if (isUserExist) {
             const id = isUserExist._id;
             const user = await user_model_1.default.findByIdAndUpdate(id, { role }, { new: true });
+            if (!user) {
+                return next(new ErrorHandler_1.default("User not found", 404));
+            }
+            const accessToken = user.SignAccessToken();
             res.status(201).json({
                 success: true,
-                user,
+                user: {
+                    _id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    role: user.role,
+                    avatar: user.avatar,
+                    courses: user.courses,
+                },
+                accessToken,
             });
         }
         else {
@@ -310,7 +361,6 @@ exports.deleteUser = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, nex
             return next(new ErrorHandler_1.default("User not found", 404));
         }
         await user.deleteOne({ id });
-        await redis_1.redis.del(id);
         res.status(200).json({
             success: true,
             message: "User deleted successfully",
