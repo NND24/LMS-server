@@ -3,7 +3,6 @@ import { CatchAsyncError } from "../middlewares/catchAsyncError";
 import ErrorHandler from "../utils/ErrorHandler";
 import cloudinary from "cloudinary";
 import courseModel, { Course } from "../models/course.model";
-import { redis } from "../utils/redis";
 import mongoose from "mongoose";
 import ejs from "ejs";
 import path from "path";
@@ -81,26 +80,14 @@ export const getSingleCourse = CatchAsyncError(async (req: Request, res: Respons
   try {
     const courseId = req.params.id;
 
-    const isCacheExist = await redis.get(courseId);
+    const course = await courseModel
+      .findById(courseId)
+      .select("-courseData.videoUrl -courseData.suggestion -courseData.question -courseData.links");
 
-    if (isCacheExist) {
-      const course = JSON.parse(isCacheExist);
-      res.status(200).json({
-        success: true,
-        course,
-      });
-    } else {
-      const course = await courseModel
-        .findById(req.params.id)
-        .select("-courseData.videoUrl -courseData.suggestion -courseData.question -courseData.links");
-
-      await redis.set(courseId, JSON.stringify(course), "EX", 604800);
-
-      res.status(200).json({
-        success: true,
-        course,
-      });
-    }
+    res.status(200).json({
+      success: true,
+      course,
+    });
   } catch (error: any) {
     return next(new ErrorHandler(error.message, 400));
   }
@@ -111,8 +98,6 @@ export const getAllCourses = CatchAsyncError(async (req: Request, res: Response,
     const courses = await courseModel
       .find()
       .select("-courseData.videoUrl -courseData.suggestion -courseData.question -courseData.links");
-
-    await redis.set("allCourses", JSON.stringify(courses));
 
     res.status(200).json({
       success: true,
@@ -325,8 +310,6 @@ export const addReview = CatchAsyncError(async (req: Request, res: Response, nex
 
     await course?.save();
 
-    await redis.set(courseId, JSON.stringify(course), "EX", 604800);
-
     const noti = {
       title: "New review received",
       message: `${req.user.name} has given in ${course?.name}`,
@@ -378,8 +361,6 @@ export const addReplyReview = CatchAsyncError(async (req: Request, res: Response
 
     await course.save();
 
-    await redis.set(courseId, JSON.stringify(course), "EX", 604800);
-
     res.status(200).json({
       success: true,
       course,
@@ -413,7 +394,6 @@ export const deleteCourse = CatchAsyncError(async (req: Request, res: Response, 
     }
 
     await course.deleteOne({ id });
-    await redis.del(id);
 
     res.status(200).json({
       success: true,

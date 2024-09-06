@@ -8,7 +8,6 @@ const catchAsyncError_1 = require("../middlewares/catchAsyncError");
 const ErrorHandler_1 = __importDefault(require("../utils/ErrorHandler"));
 const cloudinary_1 = __importDefault(require("cloudinary"));
 const course_model_1 = __importDefault(require("../models/course.model"));
-const redis_1 = require("../utils/redis");
 const mongoose_1 = __importDefault(require("mongoose"));
 const ejs_1 = __importDefault(require("ejs"));
 const path_1 = __importDefault(require("path"));
@@ -71,24 +70,13 @@ exports.editCourse = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, nex
 exports.getSingleCourse = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, next) => {
     try {
         const courseId = req.params.id;
-        const isCacheExist = await redis_1.redis.get(courseId);
-        if (isCacheExist) {
-            const course = JSON.parse(isCacheExist);
-            res.status(200).json({
-                success: true,
-                course,
-            });
-        }
-        else {
-            const course = await course_model_1.default
-                .findById(req.params.id)
-                .select("-courseData.videoUrl -courseData.suggestion -courseData.question -courseData.links");
-            await redis_1.redis.set(courseId, JSON.stringify(course), "EX", 604800);
-            res.status(200).json({
-                success: true,
-                course,
-            });
-        }
+        const course = await course_model_1.default
+            .findById(courseId)
+            .select("-courseData.videoUrl -courseData.suggestion -courseData.question -courseData.links");
+        res.status(200).json({
+            success: true,
+            course,
+        });
     }
     catch (error) {
         return next(new ErrorHandler_1.default(error.message, 400));
@@ -99,7 +87,6 @@ exports.getAllCourses = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, 
         const courses = await course_model_1.default
             .find()
             .select("-courseData.videoUrl -courseData.suggestion -courseData.question -courseData.links");
-        await redis_1.redis.set("allCourses", JSON.stringify(courses));
         res.status(200).json({
             success: true,
             courses,
@@ -252,7 +239,6 @@ exports.addReview = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, next
             course.ratings = avg / course.reviews.length;
         }
         await course?.save();
-        await redis_1.redis.set(courseId, JSON.stringify(course), "EX", 604800);
         const noti = {
             title: "New review received",
             message: `${req.user.name} has given in ${course?.name}`,
@@ -288,7 +274,6 @@ exports.addReplyReview = (0, catchAsyncError_1.CatchAsyncError)(async (req, res,
         }
         review.commentReplies.push(replyData);
         await course.save();
-        await redis_1.redis.set(courseId, JSON.stringify(course), "EX", 604800);
         res.status(200).json({
             success: true,
             course,
@@ -318,7 +303,6 @@ exports.deleteCourse = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, n
             return next(new ErrorHandler_1.default("Course not found", 404));
         }
         await course.deleteOne({ id });
-        await redis_1.redis.del(id);
         res.status(200).json({
             success: true,
             message: "Course deleted successfully",

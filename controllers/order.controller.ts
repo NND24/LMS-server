@@ -2,12 +2,11 @@ import { Request, Response, NextFunction } from "express";
 import { CatchAsyncError } from "../middlewares/catchAsyncError";
 import ErrorHandler from "../utils/ErrorHandler";
 import userModel from "../models/user.model";
-import courseModel, { Course } from "../models/course.model";
+import courseModel from "../models/course.model";
 import ejs from "ejs";
 import path from "path";
 import sendEmail from "../utils/sendEmail";
 import notificationModel from "../models/notification.model";
-import { redis } from "../utils/redis";
 import orderModel from "../models/order.model";
 require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
@@ -56,7 +55,7 @@ export const createOrder = CatchAsyncError(async (req: Request, res: Response, n
 
     const mailData = {
       order: {
-        _id: course._id.toString().slice(0, 6),
+        _id: course?._id.toString().slice(0, 6),
         name: course.name,
         price: course.price,
         date: new Date().toLocaleDateString("vi-VN", { year: "numeric", month: "long", day: "numeric" }),
@@ -77,7 +76,6 @@ export const createOrder = CatchAsyncError(async (req: Request, res: Response, n
     }
 
     user.courses.push({ courseId: course._id.toString() });
-    await redis.set(req.user?._id.toString(), JSON.stringify(user));
     await user.save();
 
     await notificationModel.create({

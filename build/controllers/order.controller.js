@@ -12,7 +12,6 @@ const ejs_1 = __importDefault(require("ejs"));
 const path_1 = __importDefault(require("path"));
 const sendEmail_1 = __importDefault(require("../utils/sendEmail"));
 const notification_model_1 = __importDefault(require("../models/notification.model"));
-const redis_1 = require("../utils/redis");
 const order_model_1 = __importDefault(require("../models/order.model"));
 require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
@@ -48,7 +47,7 @@ exports.createOrder = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, ne
         };
         const mailData = {
             order: {
-                _id: course._id.toString().slice(0, 6),
+                _id: course?._id.toString().slice(0, 6),
                 name: course.name,
                 price: course.price,
                 date: new Date().toLocaleDateString("vi-VN", { year: "numeric", month: "long", day: "numeric" }),
@@ -67,7 +66,6 @@ exports.createOrder = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, ne
             return next(new ErrorHandler_1.default("Failed to send confirmation email", 500));
         }
         user.courses.push({ courseId: course._id.toString() });
-        await redis_1.redis.set(req.user?._id.toString(), JSON.stringify(user));
         await user.save();
         await notification_model_1.default.create({
             user: user._id,
