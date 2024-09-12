@@ -15,6 +15,7 @@ export const isAuthenticated = CatchAsyncError(async (req: Request, res: Respons
   if (token) {
     jwt.verify(token, process.env.ACCESS_TOKEN as string, async (err, decoded: any) => {
       if (err) {
+        console.log(err);
         return next(new ErrorHandler("Forbidden: Invalid token", 403));
       }
 

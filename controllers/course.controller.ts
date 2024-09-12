@@ -239,6 +239,10 @@ export const addAnswer = CatchAsyncError(async (req: Request, res: Response, nex
     } else {
       const user = await userModel.findById(question.user);
 
+      if (!user) {
+        return next(new ErrorHandler("User not found", 404));
+      }
+
       const data = {
         name: user.name,
         title: courseContent.title,
@@ -276,11 +280,16 @@ interface AddReviewData {
 
 export const addReview = CatchAsyncError(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const userCourseList = req.user?.courses;
+    const user = req.user;
 
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
+
+    const userCourseList = user.courses;
     const courseId = req.params.id;
 
-    const courseExist = userCourseList.some((course: any) => course._id.toString() === courseId.toString());
+    const courseExist = userCourseList.some((course: any) => course.courseId.toString() === courseId.toString());
 
     if (!courseExist) {
       return next(new ErrorHandler("You are not eligible to access this course", 404));
