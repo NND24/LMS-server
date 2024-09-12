@@ -17,6 +17,7 @@ exports.isAuthenticated = (0, catchAsyncError_1.CatchAsyncError)(async (req, res
     if (token) {
         jsonwebtoken_1.default.verify(token, process.env.ACCESS_TOKEN, async (err, decoded) => {
             if (err) {
+                console.log(err);
                 return next(new ErrorHandler_1.default("Forbidden: Invalid token", 403));
             }
             if (decoded?.id) {

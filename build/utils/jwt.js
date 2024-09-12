@@ -10,7 +10,7 @@ const accessTokenExpire = parseInt(process.env.ACCESS_TOKEN_EXPIRE || "5", 10);
 const refreshTokenExpire = parseInt(process.env.REFRESH_TOKEN_EXPIRE || "30", 10);
 exports.accessTokenOptions = {
     expires: new Date(Date.now() + accessTokenExpire * 60 * 60 * 1000),
-    maxAge: accessTokenExpire * 3 * 1000,
+    maxAge: accessTokenExpire * 60 * 60 * 1000,
     httpOnly: true,
     sameSite: "none",
     secure: true,

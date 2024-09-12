@@ -113,7 +113,7 @@ exports.logoutUser = (0, catchAsyncError_1.CatchAsyncError)(async (req, res, nex
         if (!cookies?.jwt)
             return res.sendStatus(204);
         const refreshToken = cookies.jwt;
-        const foundUser = await user_model_1.default.findOne({ refreshToken }).exec();
+        const foundUser = await user_model_1.default.findOne({ refreshToken: { $in: [refreshToken] } }).exec();
         if (!foundUser) {
             res.clearCookie("jwt", { httpOnly: true, sameSite: "none", secure: true });
             return res.sendStatus(204);
@@ -138,13 +138,13 @@ exports.updateAccessToken = (0, catchAsyncError_1.CatchAsyncError)(async (req, r
         }
         const refreshToken = cookies.jwt;
         res.clearCookie("jwt", { httpOnly: true, sameSite: "none", secure: true });
-        const foundUser = await user_model_1.default.findOne({ refreshToken }).exec();
+        const foundUser = await user_model_1.default.findOne({ refreshToken: { $in: [refreshToken] } }).exec();
         if (!foundUser) {
             jsonwebtoken_1.default.verify(refreshToken, process.env.REFRESH_TOKEN, async (err, decoded) => {
                 if (err) {
                     return next(new ErrorHandler_1.default("Forbidden: Invalid or expired refresh token", 403));
                 }
-                const user = await user_model_1.default.findOne({ name: decoded.name }).exec();
+                const user = await user_model_1.default.findById(decoded?.id).exec();
                 if (user) {
                     user.refreshToken = [];
                     await user.save();
@@ -163,6 +163,7 @@ exports.updateAccessToken = (0, catchAsyncError_1.CatchAsyncError)(async (req, r
             if (foundUser._id.toString() !== decoded.id) {
                 return next(new ErrorHandler_1.default("Forbidden: User mismatch", 403));
             }
+            foundUser.refreshToken = newRefreshTokenArray;
             (0, jwt_1.sendToken)(foundUser, 200, req, res);
         });
     }
